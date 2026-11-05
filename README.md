@@ -1,6 +1,6 @@
 # ask-northwind
 
-ask-northwind is a small public demo. A visitor asks a question in plain English about the Northwind sample database, a model writes one SQL statement, plain code validates it and runs it in a read-only sandbox, and the page shows the answer and the SQL that ran. It is not an agent: one model call, no tools, no retries. The code, not the prompt, enforces safety.
+ask-northwind is a small public demo. A visitor asks a question in plain English about the Northwind sample database, a model writes one SQL statement, plain code validates it and runs it in a read-only sandbox, and the page shows the answer and the SQL that ran. It is not an agent: one model call, no tools, no retries. The code, not the prompt, enforces safety..
 
 ## Data
 
