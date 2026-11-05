@@ -1,0 +1,3 @@
+Revenue means unit price multiplied by quantity multiplied by one minus the discount, summed over order lines.
+A year means the calendar year of the order date.
+A discontinued product is one flagged as discontinued.

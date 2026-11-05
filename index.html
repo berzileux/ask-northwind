@@ -1,0 +1,1786 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ask-northwind</title>
+<style nonce="__NONCE__">
+/* Layout: chat thread on the left (questions as bubbles, answers as cards, composer at the bottom), sandbox report on the right (the SQL that ran and the checks applied to the selected answer). Neutral greys, one green accent that always carries black text. Blocked and stopped states use black and hatching so green only ever means passed or selected. */
+:root {
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --msg: #f2f2f7;
+  --ink: #000000;
+  --muted: #6c6c70;
+  --line: #e5e5ea;
+  --edge: #c6c6c8;
+  --strong: #000000;
+  --accent: #34c759;
+  --accent-ink: #000000;
+  --code-bg: #f2f2f7;
+  --hatch: #dcdce1;
+  --sql-kw: #1a7f37;
+  --sql-fn: #0b5cad;
+  --sql-str: #a14a00;
+  --sql-num: #6f42c1;
+  --sql-id: #3a3a3c;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --msg: #2a2a2d;
+    --ink: #f2f2f7;
+    --muted: #98989f;
+    --line: #2c2c2e;
+    --edge: #3a3a3c;
+    --strong: #d1d1d6;
+    --accent: #30d158;
+    --code-bg: #111113;
+    --hatch: #2c2c2e;
+    --sql-kw: #5ee07d;
+    --sql-fn: #6cb6ff;
+    --sql-str: #ffb366;
+    --sql-num: #c3a0ff;
+    --sql-id: #c7c7cc;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --msg: #2a2a2d;
+  --ink: #f2f2f7;
+  --muted: #98989f;
+  --line: #2c2c2e;
+  --edge: #3a3a3c;
+  --strong: #d1d1d6;
+  --accent: #30d158;
+  --code-bg: #111113;
+  --hatch: #2c2c2e;
+  --sql-kw: #5ee07d;
+  --sql-fn: #6cb6ff;
+  --sql-str: #ffb366;
+  --sql-num: #c3a0ff;
+  --sql-id: #c7c7cc;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.5;
+  padding-block: 24px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--strong); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px; }
+h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
+.sub { margin: 4px 0 0; color: var(--muted); max-width: 56ch; }
+.tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--edge); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.seg button { background: transparent; color: var(--ink); border: 0; padding: 7px 14px; font-size: 14px; font-weight: 500; }
+.seg button + button { border-left: 1px solid var(--edge); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+.notice { margin: 0; font-size: 14px; border: 1px dashed var(--edge); border-radius: 10px; padding: 9px 14px; color: var(--muted); background: var(--surface); }
+
+.panels { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; height: clamp(540px, calc(100dvh - 260px), 780px); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); min-height: 48px; }
+.panel-head h2 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.count { font-size: 13px; color: var(--muted); font-family: var(--font-mono); }
+
+.thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.empty { margin: auto; max-width: 34ch; text-align: center; color: var(--muted); }
+.empty strong { display: block; color: var(--ink); font-size: 17px; margin-bottom: 4px; }
+
+.bubble { align-self: flex-end; max-width: 88%; background: var(--accent); color: var(--accent-ink); border-radius: 18px 18px 4px 18px; padding: 9px 14px; white-space: pre-wrap; overflow-wrap: anywhere; font-weight: 500; }
+.reply { align-self: stretch; max-width: 100%; min-width: 0; background: var(--msg); border: 1px solid transparent; border-radius: 18px 18px 18px 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; cursor: pointer; }
+.reply:hover { border-color: var(--edge); }
+.reply[aria-current="true"] { border-color: var(--strong); }
+.reply-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.meta { margin: 0; font-size: 13px; color: var(--muted); }
+.note { margin: 0; font-size: 13px; color: var(--muted); }
+.plain { margin: 0; }
+.working { color: var(--muted); }
+
+.pill { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.pill.ok { background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink); }
+.pill.bad { background: var(--strong); color: var(--bg); border: 1px solid var(--strong); }
+.pill.idle { border: 1px dashed var(--muted); color: var(--muted); }
+
+.scroll { overflow-x: auto; border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14.5px; }
+th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--edge); }
+td.right, th.right { text-align: right; }
+tbody tr:last-child td { border-bottom: 0; }
+
+.blocked { border: 2px solid var(--strong); border-radius: 10px; padding: 12px 14px; background: repeating-linear-gradient(135deg, transparent 0 7px, var(--hatch) 7px 8px); }
+.blocked strong { display: block; }
+.blocked p { margin: 2px 0 0; }
+
+.composer { border-top: 1px solid var(--line); padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
+.examples summary { cursor: pointer; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 2px 0; }
+.groups { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; max-height: 190px; overflow-y: auto; }
+.group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.group-name { flex: 0 0 100%; font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.chip { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 13.5px; text-align: left; max-width: 100%; }
+.chip:hover { border-color: var(--edge); }
+.chip.danger { border-style: dashed; }
+.row { display: flex; gap: 10px; align-items: flex-end; }
+.row textarea { flex: 1 1 auto; min-width: 0; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--edge); border-radius: 12px; padding: 10px 12px; line-height: 1.5; min-height: 46px; max-height: 200px; resize: none; overflow-y: hidden; display: block; }
+.row textarea::placeholder { color: var(--muted); }
+.go { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); border-radius: 12px; padding: 0 22px; font-weight: 600; min-height: 46px; }
+.go:hover { filter: brightness(0.94); }
+.go:disabled { opacity: 0.55; cursor: default; }
+.hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.report { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.sec { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.sec + .sec { border-top: 1px solid var(--line); }
+.sec h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.sec-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+pre { margin: 0; background: var(--code-bg); border-radius: 10px; padding: 12px 14px; overflow-x: auto; font-family: var(--font-mono); font-size: 13px; line-height: 1.65; tab-size: 4; }
+.kw { color: var(--sql-kw); font-weight: 600; }
+.fn { color: var(--sql-fn); }
+.str { color: var(--sql-str); }
+.nm { color: var(--sql-num); }
+.cmt { color: var(--muted); font-style: italic; }
+.op { color: var(--muted); }
+.id { color: var(--sql-id); }
+.copy { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 11px; font-size: 13px; }
+:root { --box: #eef3fb; --box-edge: #2a78d6; --link: #8e8e93; --hi: #2a78d6; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --box: #16233a; --box-edge: #3987e5; --link: #7c7c84; --hi: #6aa2ff; }
+}
+:root[data-theme="dark"] { --box: #16233a; --box-edge: #3987e5; --link: #7c7c84; --hi: #6aa2ff; }
+.dg { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.dg-svg { display: block; min-width: 640px; width: 100%; height: auto; }
+.dg-link path { fill: none; stroke: var(--link); stroke-width: 1.3; }
+.dg-link circle { fill: var(--link); }
+.dg-box rect { fill: var(--box); stroke: var(--box-edge); stroke-width: 1.2; }
+.dg-name { fill: var(--ink); font: 600 13px var(--font-ui); }
+.dg-sub { fill: var(--muted); font: 11px var(--font-mono); }
+.dg-box:focus { outline: none; }
+.dg-box:focus rect, .dg-box.dg-hi rect { stroke-width: 2.4; stroke: var(--hi); }
+.dg-link.dg-hi path { stroke: var(--hi); stroke-width: 2.4; }
+.dg-link.dg-hi circle { fill: var(--hi); }
+.dg-dim { opacity: 0.25; }
+.dg-legend { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.chev { width: 28px; height: 28px; padding: 0; border: 1px solid var(--edge); border-radius: 8px; background: var(--surface); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.chev::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); margin-top: -3px; }
+.reply.collapsed .chev::before { transform: rotate(-45deg); margin-top: 0; margin-left: -3px; }
+.qline { display: none; }
+.reply.collapsed > :not(.reply-top) { display: none; }
+.reply.collapsed .hide-c { display: none; }
+.reply.collapsed .reply-top { flex-wrap: nowrap; }
+.reply.collapsed .qline { display: block; flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; margin: 0; }
+@media (pointer: coarse) { .chev { width: 44px; height: 44px; } }
+.copy:hover { border-color: var(--edge); }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.checks li { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.checks li:last-child { border-bottom: 0; }
+.check-name { font-weight: 500; min-width: 0; }
+.check-detail { grid-column: 1; font-size: 13px; color: var(--muted); }
+.checks .pill { grid-row: 1; grid-column: 2; }
+.report-empty { margin: auto; padding: 24px; max-width: 36ch; text-align: center; color: var(--muted); }
+.panel-head .right { display: flex; align-items: center; gap: 12px; }
+.copy:disabled { opacity: 0.5; cursor: default; }
+.old { opacity: 0.55; }
+.divider { align-self: stretch; display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.divider::before, .divider::after { content: ""; flex: 1; border-top: 1px dashed var(--muted); }
+.memlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.memlist li { padding: 8px 0; border-bottom: 1px solid var(--line); display: grid; gap: 2px; }
+.memlist li:last-child { border-bottom: 0; }
+.mem-q { font-weight: 500; overflow-wrap: anywhere; }
+.mem-d { font-size: 13px; color: var(--muted); }
+.memnote { margin: 0; font-size: 13px; color: var(--muted); }
+:root { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #008300; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300; }
+}
+:root[data-theme="dark"] { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300; }
+/* Block text on the series color: white on the light blue is 4.42:1, so the light ink is black (4.76:1); the dark ink is near black (5.44:1). */
+:root { --block-ink: #000000; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --block-ink: #0a0a0a; }
+}
+:root[data-theme="dark"] { --block-ink: #0a0a0a; }
+.gv { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gv-title { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.gv-list { list-style: none; margin: 0; padding: 0; }
+.gv-row { display: grid; grid-template-columns: minmax(56px, auto) minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid var(--line); }
+.gv-row:first-child { border-top: 0; }
+.gv-label { font-family: var(--font-mono); font-size: 13px; padding-top: 4px; overflow-wrap: anywhere; }
+.gv-blocks { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.gv-block { background: var(--series-1); color: var(--block-ink); font-size: 13px; padding: 4px 10px; border-radius: 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gv-count { color: var(--muted); font-size: 12px; padding-top: 6px; }
+.gv-note { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+@media (max-width: 520px) {
+  .gv-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .gv-label { grid-column: 1; }
+  .gv-count { grid-column: 2; grid-row: 1; }
+  .gv-blocks { grid-column: 1 / -1; }
+}
+.viewseg { margin-left: auto; }
+.viewseg button { padding: 5px 12px; font-size: 13px; }
+.viewseg button:disabled { opacity: 0.45; cursor: not-allowed; }
+.viewbody { position: relative; }
+.chart { position: relative; overflow-x: auto; padding-top: 4px; }
+.piewrap { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; overflow-x: visible; }
+.svg { display: block; width: 100%; min-width: 420px; height: auto; }
+.svg.pie { width: 200px; min-width: 0; flex: 0 0 auto; }
+.svg .tx { font-size: 12px; fill: var(--ink); font-family: var(--font-ui); }
+.svg .tx.mute { fill: var(--muted); }
+.svg .tx.val { font-variant-numeric: tabular-nums; }
+.svg .axis { stroke: var(--edge); stroke-width: 1; }
+.svg .grid { stroke: var(--line); stroke-width: 1; }
+.svg .hit { fill: transparent; }
+.svg .mark:hover .bar, .svg .mark:focus .bar { opacity: 0.8; }
+.svg .mark:focus { outline: none; }
+.svg .mark:focus-visible .hit { stroke: var(--strong); stroke-width: 2; }
+.svg .bar { fill: var(--series-1); }
+.svg .ln { stroke: var(--series-1); stroke-width: 2; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.svg .dot { fill: var(--series-1); stroke: var(--msg); stroke-width: 2; }
+.svg .cross { stroke: var(--muted); stroke-width: 1; }
+.svg .overlay { fill: transparent; }
+.svg .overlay:focus-visible { outline: 3px solid var(--strong); outline-offset: 2px; }
+.svg .slice { stroke: var(--msg); stroke-width: 2; }
+.svg .slice:hover, .svg .slice:focus { opacity: 0.8; outline: none; }
+.svg .slice:focus-visible { stroke: var(--strong); }
+.slice.s1, .sw.s1 { fill: var(--series-1); background: var(--series-1); }
+.slice.s2, .sw.s2 { fill: var(--series-2); background: var(--series-2); }
+.slice.s3, .sw.s3 { fill: var(--series-3); background: var(--series-3); }
+.slice.s4, .sw.s4 { fill: var(--series-4); background: var(--series-4); }
+.slice.s5, .sw.s5 { fill: var(--series-5); background: var(--series-5); }
+.slice.s6, .sw.s6 { fill: var(--series-6); background: var(--series-6); }
+.legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 200px; flex: 1 1 200px; }
+.legend li { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center; font-size: 14px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: block; }
+.lg-val { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tip { position: absolute; z-index: 5; pointer-events: none; background: var(--surface); border: 1px solid var(--edge); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.18); white-space: nowrap; }
+.tip strong { font-weight: 700; }
+.tip span { color: var(--muted); }
+.paragraph { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; line-height: 1.55; }
+
+.limits { margin: 0; text-align: center; font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
+
+@media (max-width: 900px) {
+  .panels { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .thread { max-height: 62dvh; min-height: 260px; }
+  .report { max-height: none; }
+  .panel-report { min-height: 220px; }
+}
+@media (max-width: 520px) {
+  h1 { font-size: 24px; }
+  .go { padding: 0 16px; }
+}
+@media (pointer: coarse) { .chip, .copy, .seg button { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>ask-northwind</h1>
+      <p class="sub">Ask the Northwind sample database a question in plain English. The page shows the answer and the SQL that ran.</p>
+    </div>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" data-t="dark" aria-pressed="false">Dark</button>
+        <button type="button" data-t="light" aria-pressed="false">Light</button>
+        <button type="button" data-t="system" aria-pressed="true">System</button>
+      </div>
+    </div>
+  </header>
+
+  <p class="notice" role="note">Demo only. Do not enter private information. Questions go to a hosted AI model and may be used by its provider to improve its models.</p>
+
+  <div class="panels">
+    <section class="panel" aria-label="Conversation">
+      <div class="panel-head"><h2>Thread</h2><div class="right"><span class="count" id="count">Memory: 0 of 6 questions</span><button class="copy" id="newsess" type="button" disabled>New session</button></div></div>
+      <div class="thread" id="thread" role="log" aria-live="polite">
+        <div class="empty" id="empty"><strong>No questions yet.</strong>Type one below, or open Examples and pick a question. Sandbox demos show what gets blocked.</div>
+      </div>
+      <div class="composer">
+        <details class="examples" id="examples" open>
+          <summary>Examples and sandbox demos</summary>
+          <div class="groups" id="groups"></div>
+        </details>
+        <form class="row" id="askform" autocomplete="off">
+          <label class="sr" for="q">Ask Hermini</label>
+          <textarea id="q" rows="1" placeholder="Ask Hermini. The box grows as you write."></textarea>
+          <button class="go" id="go" type="submit">Ask</button>
+        </form>
+        <p class="hint" id="memoryhint">Enter sends. Shift+Enter adds a new line. The last 6 questions are remembered in this page until you reload or start a new session.</p>
+      </div>
+    </section>
+
+    <section class="panel panel-report" aria-label="Sandbox report">
+      <div class="panel-head"><h2>Sandbox report</h2><span id="rstate"></span></div>
+      <div class="report" id="report"></div>
+    </section>
+  </div>
+
+  <p class="limits" id="limits">Limits: read-only copy per request | memory: last 6 questions, rows never sent</p>
+</div>
+
+<script nonce="__NONCE__">
+(function () {
+  "use strict";
+
+  // Everything from the server or the user is added with createElement and
+  // textContent only, so no markup string is ever built from untrusted text.
+
+  var EXAMPLES = [
+    "Top 5 customers by revenue",
+    "Which employees sold the most in 2016?",
+    "Which employee sold the most, and which sold the least?",
+    "How many products are discontinued?"
+  ];
+
+  var CHART_QUESTIONS = [
+    "Draw a pie chart of orders by shipper",
+    "Show total revenue by year as a line chart",
+    "Top 5 customers by revenue as a bar chart"
+  ];
+  var MAX_BOX = 200;
+  var CLIENT_TIMEOUT_MS = 30000;
+  var EMPTY_REPORT = "Ask a question and the SQL that ran appears here with the checks the sandbox applied.";
+
+  var KW = {};
+  ("SELECT FROM WHERE JOIN INNER LEFT RIGHT OUTER CROSS ON GROUP BY ORDER HAVING LIMIT OFFSET AS AND OR NOT IN IS NULL DISTINCT DESC ASC UNION ALL CASE WHEN THEN ELSE END LIKE BETWEEN WITH DELETE DROP TABLE INSERT UPDATE INTO VALUES SET CREATE EXISTS").split(" ").forEach(function (k) { KW[k] = 1; });
+
+  var thread = document.getElementById("thread");
+  var emptyEl = document.getElementById("empty");
+  var countEl = document.getElementById("count");
+  var groupsEl = document.getElementById("groups");
+  var examplesEl = document.getElementById("examples");
+  var formEl = document.getElementById("askform");
+  var qEl = document.getElementById("q");
+  var goEl = document.getElementById("go");
+  var reportEl = document.getElementById("report");
+  var rstateEl = document.getElementById("rstate");
+  var limitsEl = document.getElementById("limits");
+  var msgs = 0;
+  var newEl = document.getElementById("newsess");
+  var hintEl = document.getElementById("memoryhint");
+  var turns = [];
+  var exchanges = [];
+  var dividerEl = null;
+  // The fallback when /api/limits cannot be read; the server value replaces it.
+  var windowSize = 6;
+  // Matches the total cap in history.py, so the page cuts the oldest turns before the server would refuse them.
+  var MAX_SENT_CHARS = 9000;
+  var MARKER = /===\s*(begin|end)|(begin|end)\s+user\s+question|(begin|end)\s+history/i;
+  var CONTROL = /[\x00-\x08\x0b-\x1f\x7f]/;
+  var selected = null;
+  var controller = null;
+
+  function h(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== null && text !== undefined) e.textContent = text;
+    return e;
+  }
+  function span(cls, text) { return h("span", cls, text); }
+  function pill(kind, label) { return span("pill " + kind, label); }
+
+  function seconds(v) { return (typeof v === "number" ? v : 0).toFixed(2); }
+
+  // One span per token, each filled with textContent, so the SQL is shown as text.
+  function highlight(sql) {
+    var frag = document.createDocumentFragment();
+    var re = /(--[^\n]*)|('(?:[^']|'')*')|("(?:[^"]|"")*")|(\d+(?:\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|([\s\S])/g;
+    var m;
+    while ((m = re.exec(sql)) !== null) {
+      if (m[1]) frag.appendChild(span("cmt", m[1]));
+      else if (m[2]) frag.appendChild(span("str", m[2]));
+      else if (m[3]) frag.appendChild(span("id", m[3]));
+      else if (m[4]) frag.appendChild(span("nm", m[4]));
+      else if (m[5]) {
+        var up = m[5].toUpperCase();
+        if (KW[up]) frag.appendChild(span("kw", m[5]));
+        else if (sql.charAt(re.lastIndex) === "(") frag.appendChild(span("fn", m[5]));
+        else frag.appendChild(span("id", m[5]));
+      }
+      else if (m[6]) frag.appendChild(document.createTextNode(m[6]));
+      else if ("(),.;=*<>+-/".indexOf(m[7]) >= 0) frag.appendChild(span("op", m[7]));
+      else frag.appendChild(document.createTextNode(m[7]));
+    }
+    return frag;
+  }
+
+  function fmt(v) {
+    if (v === null || v === undefined) return "NULL";
+    if (typeof v === "number") return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    return String(v);
+  }
+
+  function isNumberColumn(rows, index) {
+    var seen = false;
+    for (var i = 0; i < rows.length; i++) {
+      var v = rows[i][index];
+      if (v === null) continue;
+      if (typeof v !== "number") return false;
+      seen = true;
+    }
+    return seen;
+  }
+
+  function checksFor(d) {
+    var limit = Number(d.limits.timeout_s).toFixed(1);
+    var kind = d.error_kind;
+    var rows = [
+      { name: "Read-only in-memory copy", detail: "A fresh copy of the database for this request, discarded afterward", state: "ok", label: "passed" },
+      { name: "One statement only, and the authorizer: SELECT and reads only", detail: "Stacked statements, writes, ATTACH, PRAGMA and load_extension are refused", state: "ok", label: "passed" },
+      { name: "Timeout: " + limit + " s", detail: "Long queries are cancelled", state: "ok", label: "passed" },
+      { name: "Row cap: " + d.limits.max_rows + " rows", detail: "Larger results are cut and marked as truncated", state: "ok", label: "passed" }
+    ];
+    if (kind === null) {
+      if (typeof d.query_s === "number") rows[2].detail = seconds(d.query_s) + " s used of " + limit + " s";
+      else rows[2].detail = "Limit " + limit + " s";
+      rows[3].detail = d.rows.length + " of " + d.limits.max_rows + " rows returned" + (d.truncated ? ", cut" : "");
+    } else if (kind === "timeout") {
+      rows[2].state = "bad"; rows[2].label = "stopped";
+      rows[3].state = "idle"; rows[3].label = "not reached";
+    } else {
+      rows[1].state = "bad"; rows[1].label = "blocked";
+      rows[2].state = "idle"; rows[2].label = "not reached";
+      rows[3].state = "idle"; rows[3].label = "not reached";
+    }
+    return rows;
+  }
+
+  /* CHART-LOGIC BEGIN */
+  function fmtShort(v) {
+    var a = Math.abs(v);
+    if (a >= 1e6) return (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+    if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "K";
+    return String(Math.round(v * 100) / 100);
+  }
+
+  function niceMax(v) {
+    if (!(v > 0)) return 1;
+    var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
+    var f = v / p;
+    var n = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+    return n * p;
+  }
+
+  // A year column is a label: its header holds the word year and every value is a
+  // whole number from 1000 to 2999 or a four digit string in that range.
+  function isYearValue(v) {
+    if (typeof v === "number") return Math.floor(v) === v && v >= 1000 && v <= 2999;
+    return typeof v === "string" && /^\d{4}$/.test(v) && Number(v) >= 1000 && Number(v) <= 2999;
+  }
+
+  function isYearColumn(header, rows, c) {
+    if (!/year/i.test(String(header)) || rows.length === 0) return false;
+    for (var r = 0; r < rows.length; r++) if (!isYearValue(rows[r][c])) return false;
+    return true;
+  }
+
+  function chartData(columns, rows) {
+    if (!rows || rows.length < 2) return "One row: the number is the answer, nothing to chart.";
+    var nums = [], labs = [], years = [], gap = false;
+    for (var c = 0; c < columns.length; c++) {
+      if (isYearColumn(columns[c], rows, c)) { labs.push(c); years.push(c); continue; }
+      var present = 0, nulls = 0, other = 0;
+      for (var r = 0; r < rows.length; r++) {
+        var v = rows[r][c];
+        if (v === null || v === undefined) nulls++;
+        else if (typeof v === "number") present++;
+        else other++;
+      }
+      if (other === 0 && present > 0 && nulls === 0) nums.push(c);
+      else if (other === 0 && present > 0) gap = true;
+      else labs.push(c);
+    }
+    if (gap) return "Charts need every value present.";
+    if (labs.length > 3) return "Charts need at most three label columns.";
+    if (nums.length === 0) {
+      if (years.length > 0) {
+        return "Charts need a number column to measure. " + String(columns[years[0]]) + " is treated as a label. Ask for a count or total, for example: How many employees were hired each year?";
+      }
+      return "Charts need a number column to measure.";
+    }
+    if (nums.length > 1) return "Charts need exactly one number column.";
+    if (labs.length === 0) return "Charts need at least one label column.";
+    var values = rows.map(function (row) { return row[nums[0]]; });
+    if (values.some(function (x) { return x < 0; })) return "Charts need non-negative numbers.";
+    return {
+      labels: rows.map(function (row) {
+        var parts = [];
+        labs.forEach(function (c) {
+          var v = row[c];
+          if (v !== null && v !== undefined && String(v) !== "") parts.push(String(v));
+        });
+        return parts.length ? parts.join(" ") : "(none)";
+      }),
+      values: values,
+      labelIndex: labs[0],
+      valueIndex: nums[0],
+      labelNames: labs.map(function (c) { return String(columns[c]); }),
+      valueName: String(columns[nums[0]])
+    };
+  }
+
+  // One block per row, grouped under a label, for a list that has labels and no number.
+  function groupsData(columns, rows) {
+    function refuse(reason) { return { ok: false, reason: reason }; }
+    var n = rows ? rows.length : 0;
+    if (n < 2 || n > 60) return refuse("Groups needs 2 to 60 rows; this has " + n + ".");
+    var labs = [], years = [], hasNumber = false;
+    for (var c = 0; c < columns.length; c++) {
+      if (isYearColumn(columns[c], rows, c)) { labs.push(c); years.push(c); continue; }
+      var present = 0, other = 0;
+      for (var r = 0; r < n; r++) {
+        var v = rows[r][c];
+        if (v === null || v === undefined) continue;
+        if (typeof v === "number") present++;
+        else other++;
+      }
+      if (other === 0 && present > 0) hasNumber = true;
+      else labs.push(c);
+    }
+    if (hasNumber) return refuse("Groups is for lists without a number. Use Bar, Pie or Line.");
+    if (labs.length < 2) return refuse("Groups needs a group column and an item column.");
+    if (labs.length > 3) return refuse("Groups needs at most three label columns.");
+    var groupCol = years.length > 0 ? years[years.length - 1] : labs[0];
+    var itemCols = labs.filter(function (c) { return c !== groupCol; });
+    var order = [], byLabel = Object.create(null);
+    rows.forEach(function (row) {
+      var gv = row[groupCol];
+      var label = gv === null || gv === undefined || String(gv) === "" ? "(none)" : String(gv);
+      var parts = [];
+      itemCols.forEach(function (c) {
+        var v = row[c];
+        if (v !== null && v !== undefined && String(v) !== "") parts.push(String(v));
+      });
+      if (!(label in byLabel)) { byLabel[label] = { label: label, items: [] }; order.push(label); }
+      byLabel[label].items.push(parts.length ? parts.join(" ") : "(none)");
+    });
+    if (order.length < 2 || order.length > 20) return refuse("Groups needs 2 to 20 groups; this has " + order.length + ".");
+    return {
+      ok: true,
+      groupName: String(columns[groupCol]),
+      itemNames: itemCols.map(function (c) { return String(columns[c]); }),
+      groups: order.map(function (label) { return byLabel[label]; }),
+      rowCount: n
+    };
+  }
+
+  function availability(columns, rows) {
+    var d = chartData(columns, rows);
+    var g = groupsData(columns, rows);
+    var groups = g.ok ? "" : g.reason;
+    var info = g.ok ? g : null;
+    if (typeof d === "string") return { bar: d, pie: d, line: d, groups: groups, groupsInfo: info, data: null };
+    var n = d.values.length;
+    return {
+      bar: n >= 2 && n <= 30 ? "" : "Bar needs 2 to 30 rows; this has " + n + ".",
+      pie: n >= 3 && n <= 6 && d.values.every(function (x) { return x > 0; }) ? "" : "Pie needs 3 to 6 parts, all above zero; this has " + n + ".",
+      line: n >= 3 && n <= 60 && d.labels.every(function (l) { return /^\d{4}([-\/]\d{2}){0,2}$/.test(l); }) ? "" : "Line needs 3 or more points ordered by date, year or month.",
+      groups: groups,
+      groupsInfo: info,
+      data: d
+    };
+  }
+
+  function wanted(question) {
+    var t = String(question || "").toLowerCase();
+    if (/\bpie\b/.test(t)) return "pie";
+    if (/\bline (chart|graph)\b|\btrend\b/.test(t)) return "line";
+    if (/\bbar\b|\bchart\b|\bgraph\b|\bplot\b/.test(t)) return "bar";
+    return "";
+  }
+
+  function pickView(wantedView, av) {
+    // A list without a number opens as groups; a result with a number still opens as before.
+    if (!wantedView) return av.groups === "" ? { view: "groups", note: "" } : { view: "table", note: "" };
+    if (av[wantedView] === "") return { view: wantedView, note: "Showing a " + wantedView + " chart because your question asked for one." };
+    if (wantedView !== "bar" && av.bar === "") return { view: "bar", note: av[wantedView] + " Showing a bar chart instead." };
+    if (av.groups === "") return { view: "groups", note: av[wantedView] + " Showing groups instead." };
+    return { view: "table", note: av[wantedView] + " Showing the table instead." };
+  }
+  /* CHART-LOGIC END */
+
+  /* CSV-LOGIC BEGIN */
+  // A text field that starts with one of these could be read as a formula by a spreadsheet.
+  var FORMULA_STARTS = "=+-@\t\r";
+
+  function csvField(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "number") return String(value);
+    if (typeof value === "boolean") return value ? "true" : "false";
+    var text = String(value);
+    if (text.length > 0 && FORMULA_STARTS.indexOf(text.charAt(0)) >= 0) text = "'" + text;
+    if (/[,"\r\n]/.test(text)) text = '"' + text.replace(/"/g, '""') + '"';
+    return text;
+  }
+
+  // UTF-8 byte order mark first, CRLF after every line including the last.
+  function csvText(columns, rows) {
+    var lines = [columns.map(csvField).join(",")];
+    rows.forEach(function (row) { lines.push(row.map(csvField).join(",")); });
+    return "\ufeff" + lines.join("\r\n") + "\r\n";
+  }
+
+  function csvFileName(date) {
+    function two(n) { return (n < 10 ? "0" : "") + n; }
+    return "ask-northwind-result-" + date.getFullYear() + two(date.getMonth() + 1) + two(date.getDate()) + "-" + two(date.getHours()) + two(date.getMinutes()) + two(date.getSeconds()) + ".csv";
+  }
+  /* CSV-LOGIC END */
+
+  /* INTENT-LOGIC BEGIN */
+  // Words that ask for a picture of how the tables connect.
+  var DIAGRAM_WORDS = ["diagram", "diagrams", "erd", "er diagram", "entity relationship", "entity-relationship", "schematic", "schema diagram"];
+  // A chart word means a chart of data, which the model and the chart views handle, so it wins over a diagram word.
+  var CHART_WORDS = ["pie", "bar", "line", "chart", "charts", "graph", "plot", "histogram"];
+
+  function hasWord(text, words) {
+    return words.some(function (word) {
+      var escaped = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+      return new RegExp("(^|[^a-z0-9])" + escaped + "($|[^a-z0-9])").test(text);
+    });
+  }
+
+  function wantsDiagram(question) {
+    var text = String(question === null || question === undefined ? "" : question).toLowerCase().replace(/\s+/g, " ").trim();
+    if (!text) return false;
+    if (hasWord(text, CHART_WORDS)) return false;
+    return hasWord(text, DIAGRAM_WORDS);
+  }
+  /* INTENT-LOGIC END */
+
+  // Hands a finished file to the browser through a temporary link; the object URL is released at once.
+  function saveBlob(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  }
+
+  function exportCsv(d, note) {
+    note.hidden = true;
+    try {
+      saveBlob(new Blob([csvText(d.columns, d.rows)], { type: "text/csv;charset=utf-8" }), csvFileName(new Date()));
+    } catch (e) {
+      note.textContent = "Could not save the file in this browser.";
+      note.hidden = false;
+    }
+  }
+
+  // The refusal row the rules give for a question the database cannot answer.
+  var REFUSAL_TEXT = "I cannot answer that from this database";
+  var REFUSAL_HINT = "I can only answer from this database's tables. Database map shows how they connect; About this database says what is in it.";
+
+  function isRefusal(d) {
+    return d.rows.length === 1 && d.columns.length === 1 && d.columns[0] === "message" && d.rows[0][0] === REFUSAL_TEXT;
+  }
+
+  /* DIAGRAM-LOGIC BEGIN */
+  // Box size, spacing and padding of the Database map diagram, in drawing units.
+  var DG = { boxW: 200, boxH: 46, gapX: 80, stepY: 62, pad: 24, loop: 30, subMax: 28 };
+
+  function dgRound(v) { return Math.round(v * 10) / 10; }
+  function dgByName(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
+
+  // Lays the tables out in columns by how many references they sit behind, with the
+  // referenced tables on the left, and computes one curve per foreign key. Pure and
+  // deterministic: the same schema always gives the same numbers.
+  function diagramLayout(schema, options) {
+    var sweeps = options && typeof options.sweeps === "number" ? options.sweeps : 4;
+    var tables = schema && Array.isArray(schema.tables) ? schema.tables : [];
+    var byTable = Object.create(null);
+    tables.forEach(function (t) { byTable[String(t.name)] = t; });
+    var names = Object.keys(byTable).sort(dgByName);
+    var n = names.length;
+
+    // Links: one per foreign key whose target table exists.
+    var links = [];
+    names.forEach(function (name) {
+      (byTable[name].foreign_keys || []).forEach(function (k) {
+        var target = String(k.ref_table);
+        if (!byTable[target]) return;
+        links.push({ from: name, to: target, column: String(k.column), refColumn: String(k.ref_column), self: target === name });
+      });
+    });
+
+    // Layers by longest path. The passes are capped at the number of tables so a cycle ends;
+    // a table still changing after that is clamped.
+    var refs = Object.create(null), layer = Object.create(null), neighbors = Object.create(null);
+    names.forEach(function (name) { refs[name] = []; layer[name] = 0; neighbors[name] = []; });
+    links.forEach(function (l) {
+      if (l.self) return;
+      if (refs[l.from].indexOf(l.to) < 0) refs[l.from].push(l.to);
+      neighbors[l.from].push(l.to);
+      neighbors[l.to].push(l.from);
+    });
+    var changed = true, pass = 0;
+    while (changed && pass < n) {
+      changed = false;
+      pass++;
+      names.forEach(function (name) {
+        var best = -1;
+        refs[name].forEach(function (r) { if (layer[r] > best) best = layer[r]; });
+        if (best >= 0 && layer[name] !== best + 1) { layer[name] = best + 1; changed = true; }
+      });
+    }
+    if (changed) names.forEach(function (name) { if (layer[name] > n - 1) layer[name] = n - 1; });
+    var used = [];
+    names.forEach(function (name) { if (used.indexOf(layer[name]) < 0) used.push(layer[name]); });
+    used.sort(function (a, b) { return a - b; });
+    var cols = used.map(function () { return []; });
+    names.forEach(function (name) { cols[used.indexOf(layer[name])].push(name); });
+
+    // Order inside each column: alternating sweeps by the average position of the linked tables.
+    var maxCount = 0;
+    cols.forEach(function (col) { if (col.length > maxCount) maxCount = col.length; });
+    var pos = Object.create(null);
+    function place(col) {
+      col.forEach(function (name, i) { pos[name] = DG.pad + (i + (maxCount - col.length) / 2) * DG.stepY; });
+    }
+    cols.forEach(place);
+    for (var s = 0; s < sweeps; s++) {
+      var order = cols.map(function (c, i) { return i; });
+      if (s % 2 === 1) order.reverse();
+      order.forEach(function (ci) {
+        var col = cols[ci], score = Object.create(null);
+        col.forEach(function (name) {
+          var list = neighbors[name];
+          if (!list.length) { score[name] = pos[name]; return; }
+          var sum = 0;
+          list.forEach(function (o) { sum += pos[o]; });
+          score[name] = sum / list.length;
+        });
+        col.sort(function (a, b) { return score[a] - score[b] || dgByName(a, b); });
+        place(col);
+      });
+    }
+
+    // Boxes.
+    var fkColumns = Object.create(null), referenced = Object.create(null);
+    names.forEach(function (name) { fkColumns[name] = []; referenced[name] = 0; });
+    links.forEach(function (l) { fkColumns[l.from].push(l.column); referenced[l.to]++; });
+    var boxes = [], at = Object.create(null);
+    cols.forEach(function (col, ci) {
+      col.forEach(function (name) {
+        var full = fkColumns[name].length ? "FK: " + fkColumns[name].join(", ") : "referenced by " + referenced[name];
+        var box = {
+          name: name,
+          layer: ci,
+          x: DG.pad + ci * (DG.boxW + DG.gapX),
+          y: dgRound(pos[name]),
+          w: DG.boxW,
+          h: DG.boxH,
+          title: name,
+          subtitle: full.length > DG.subMax ? full.slice(0, DG.subMax - 3) + "..." : full,
+          fullSubtitle: full
+        };
+        boxes.push(box);
+        at[name] = box;
+      });
+    });
+
+    // Curves: from the middle of the left edge of the table that holds the key to the middle
+    // of the right edge of the table it points at; a self reference is a loop on the right.
+    var shaped = links.map(function (l) {
+      var a = at[l.from], b = at[l.to], path, dot;
+      if (l.self) {
+        var sx = a.x + a.w;
+        path = { x1: sx, y1: a.y + 12, c1x: sx + DG.loop, c1y: a.y + 12, c2x: sx + DG.loop, c2y: a.y + 34, x2: sx, y2: a.y + 34 };
+        dot = { x: sx, y: a.y + 34 };
+      } else {
+        var x1 = a.x, y1 = a.y + a.h / 2, x2 = b.x + b.w, y2 = b.y + b.h / 2;
+        var d = Math.max(40, Math.abs(x1 - x2) / 2);
+        path = { x1: x1, y1: y1, c1x: x1 - d, c1y: y1, c2x: x2 + d, c2y: y2, x2: x2, y2: y2 };
+        dot = { x: x1, y: y1 };
+      }
+      Object.keys(path).forEach(function (k) { path[k] = dgRound(path[k]); });
+      return { from: l.from, to: l.to, column: l.column, refColumn: l.refColumn, path: path, dot: { x: dgRound(dot.x), y: dgRound(dot.y) }, self: l.self };
+    });
+
+    var width = DG.pad * 2, height = DG.pad * 2;
+    if (cols.length) {
+      width = DG.pad * 2 + cols.length * DG.boxW + (cols.length - 1) * DG.gapX;
+      height = DG.pad * 2 + (maxCount - 1) * DG.stepY + DG.boxH;
+    }
+    return { width: width, height: height, layers: cols.map(function (c) { return c.slice(); }), boxes: boxes, links: shaped };
+  }
+
+  // Number of pairs of links that cross, taking each link as a straight line between its ends.
+  function countCrossings(layout) {
+    var segs = layout.links.filter(function (l) { return !l.self; }).map(function (l) { return l.path; });
+    function side(ax, ay, bx, by, cx, cy) { var v = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax); return v > 0 ? 1 : v < 0 ? -1 : 0; }
+    var count = 0;
+    for (var i = 0; i < segs.length; i++) {
+      for (var j = i + 1; j < segs.length; j++) {
+        var p = segs[i], q = segs[j];
+        if ((p.x1 === q.x1 && p.y1 === q.y1) || (p.x2 === q.x2 && p.y2 === q.y2)) continue;
+        var d1 = side(p.x1, p.y1, p.x2, p.y2, q.x1, q.y1), d2 = side(p.x1, p.y1, p.x2, p.y2, q.x2, q.y2);
+        var d3 = side(q.x1, q.y1, q.x2, q.y2, p.x1, p.y1), d4 = side(q.x1, q.y1, q.x2, q.y2, p.x2, p.y2);
+        if (d1 * d2 < 0 && d3 * d4 < 0) count++;
+      }
+    }
+    return count;
+  }
+  /* DIAGRAM-LOGIC END */
+
+  // The diagram as SVG: links first so the lines pass behind the boxes. Colors and strokes
+  // come from classes and the theme tokens; only geometry is set with attributes.
+  function diagramView(layout, schema) {
+    var host = h("div", "dg");
+    var svg = sv("svg", { viewBox: "0 0 " + layout.width + " " + layout.height, "class": "dg-svg", role: "group", "aria-label": "Diagram of " + layout.boxes.length + " tables and " + layout.links.length + " foreign keys" });
+    var linkEls = [], boxEls = [];
+    layout.links.forEach(function (l) {
+      var g = sv("g", { "class": "dg-link", "aria-hidden": "true" });
+      var p = l.path;
+      g.appendChild(sv("path", { d: "M" + p.x1 + "," + p.y1 + " C" + p.c1x + "," + p.c1y + " " + p.c2x + "," + p.c2y + " " + p.x2 + "," + p.y2 }));
+      g.appendChild(sv("circle", { cx: l.dot.x, cy: l.dot.y, r: 3.5 }));
+      svg.appendChild(g);
+      linkEls.push({ el: g, link: l });
+    });
+    layout.boxes.forEach(function (b) {
+      var g = sv("g", { "class": "dg-box", tabindex: "0", "aria-label": b.name + ". " + b.fullSubtitle });
+      g.appendChild(sv("title", null, b.fullSubtitle));
+      g.appendChild(sv("rect", { x: b.x, y: b.y, width: b.w, height: b.h, rx: 9 }));
+      g.appendChild(sv("text", { "class": "dg-name", x: b.x + 12, y: b.y + 19 }, b.title));
+      g.appendChild(sv("text", { "class": "dg-sub", x: b.x + 12, y: b.y + 36 }, b.subtitle));
+      svg.appendChild(g);
+      boxEls.push({ el: g, name: b.name });
+    });
+    function clear() {
+      boxEls.forEach(function (b) { b.el.classList.remove("dg-dim", "dg-hi"); });
+      linkEls.forEach(function (l) { l.el.classList.remove("dg-dim", "dg-hi"); });
+    }
+    function light(name) {
+      var reach = Object.create(null);
+      reach[name] = true;
+      linkEls.forEach(function (l) {
+        var on = l.link.from === name || l.link.to === name;
+        l.el.classList.toggle("dg-hi", on);
+        l.el.classList.toggle("dg-dim", !on);
+        if (on) { reach[l.link.from] = true; reach[l.link.to] = true; }
+      });
+      boxEls.forEach(function (b) {
+        b.el.classList.toggle("dg-hi", !!reach[b.name]);
+        b.el.classList.toggle("dg-dim", !reach[b.name]);
+      });
+    }
+    boxEls.forEach(function (b) {
+      b.el.addEventListener("mouseenter", function () { light(b.name); });
+      b.el.addEventListener("mouseleave", clear);
+      b.el.addEventListener("focus", function () { light(b.name); });
+      b.el.addEventListener("blur", clear);
+      b.el.addEventListener("keydown", function (e) { if (e.key === "Escape") clear(); });
+    });
+    host.appendChild(svg);
+    return host;
+  }
+
+  // The same layout drawn on a canvas with the colors of the theme active at the click.
+  function mapCanvas(layout) {
+    var cs = getComputedStyle(document.documentElement);
+    function token(name, fallback) { var v = cs.getPropertyValue(name).trim(); return v || fallback; }
+    var surface = token("--surface", "#ffffff"), fill = token("--box", "#eef3fb"), edge = token("--box-edge", "#2a78d6");
+    var linkColor = token("--link", "#8e8e93"), ink = token("--ink", "#000000"), muted = token("--muted", "#6c6c70");
+    var ui = token("--font-ui", "sans-serif"), mono = token("--font-mono", "monospace");
+    var scale = 2;
+    var canvas = document.createElement("canvas");
+    canvas.width = layout.width * scale;
+    canvas.height = layout.height * scale;
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.scale(scale, scale);
+    ctx.fillStyle = surface;
+    ctx.fillRect(0, 0, layout.width, layout.height);
+    layout.links.forEach(function (l) {
+      var p = l.path;
+      ctx.beginPath();
+      ctx.moveTo(p.x1, p.y1);
+      ctx.bezierCurveTo(p.c1x, p.c1y, p.c2x, p.c2y, p.x2, p.y2);
+      ctx.strokeStyle = linkColor;
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(l.dot.x, l.dot.y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = linkColor;
+      ctx.fill();
+    });
+    layout.boxes.forEach(function (b) {
+      var r = 9;
+      ctx.beginPath();
+      ctx.moveTo(b.x + r, b.y);
+      ctx.arcTo(b.x + b.w, b.y, b.x + b.w, b.y + b.h, r);
+      ctx.arcTo(b.x + b.w, b.y + b.h, b.x, b.y + b.h, r);
+      ctx.arcTo(b.x, b.y + b.h, b.x, b.y, r);
+      ctx.arcTo(b.x, b.y, b.x + b.w, b.y, r);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = ink;
+      ctx.font = "600 13px " + ui;
+      ctx.fillText(b.title, b.x + 12, b.y + 19);
+      ctx.fillStyle = muted;
+      ctx.font = "11px " + mono;
+      ctx.fillText(b.subtitle, b.x + 12, b.y + 36);
+    });
+    return canvas;
+  }
+
+  function saveMapImage(data, note) {
+    note.hidden = true;
+    function fail() {
+      note.textContent = "Could not save the image in this browser.";
+      note.hidden = false;
+    }
+    try {
+      var canvas = mapCanvas(diagramLayout(data));
+      if (!canvas) { fail(); return; }
+      canvas.toBlob(function (blob) {
+        if (!blob) { fail(); return; }
+        try { saveBlob(blob, "northwind-database-map.png"); } catch (e) { fail(); }
+      }, "image/png");
+    } catch (e) {
+      fail();
+    }
+  }
+
+  // The one URL-like string in the page: the namespace identifier SVG elements need.
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs, text) {
+    var e = document.createElementNS(SVG_NS, tag);
+    if (attrs) for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== null && text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function makeTip(host) { var t = h("div", "tip"); t.hidden = true; host.appendChild(t); return t; }
+  function placeTip(host, tip, x, y, value, name) {
+    tip.textContent = "";
+    tip.appendChild(h("strong", "", value));
+    tip.appendChild(h("span", "", name));
+    tip.hidden = false;
+    var left = Math.max(4, Math.min(x + 12, host.clientWidth - tip.offsetWidth - 4));
+    tip.style.left = left + "px";
+    tip.style.top = Math.max(0, y - tip.offsetHeight - 6) + "px";
+  }
+  function bindTip(host, tip, el, getText) {
+    function at(ev) {
+      var hr = host.getBoundingClientRect(), x, y;
+      if (ev && ev.type !== "focus" && typeof ev.clientX === "number") { x = ev.clientX - hr.left; y = ev.clientY - hr.top; }
+      else { var r = el.getBoundingClientRect(); x = r.left + r.width / 2 - hr.left; y = r.top - hr.top; }
+      var t = getText();
+      placeTip(host, tip, x, y, t[0], t[1]);
+    }
+    el.addEventListener("pointermove", at);
+    el.addEventListener("pointerenter", at);
+    el.addEventListener("focus", at);
+    el.addEventListener("pointerleave", function () { tip.hidden = true; });
+    el.addEventListener("blur", function () { tip.hidden = true; });
+  }
+
+  function barView(d) {
+    var host = h("div", "chart"), tip = makeTip(host);
+    var n = d.values.length, rowH = 30, th = 18, padT = 6, padR = 74, W = 560;
+    var maxLab = Math.min(28, Math.max.apply(null, d.labels.map(function (l) { return l.length; })));
+    var labW = Math.min(190, Math.round(maxLab * 6.6) + 12);
+    var H = padT * 2 + n * rowH;
+    var svg = sv("svg", { viewBox: "0 0 " + W + " " + H, "class": "svg", role: "img", "aria-label": "Bar chart of " + d.valueName + " by " + d.labelNames.join(" / ") });
+    var max = niceMax(Math.max.apply(null, d.values)), plotW = W - labW - padR;
+    svg.appendChild(sv("line", { x1: labW, x2: labW, y1: padT, y2: H - padT, "class": "axis" }));
+    d.values.forEach(function (v, i) {
+      var y = padT + i * rowH + (rowH - th) / 2, w = Math.max(0, v / max * plotW);
+      var g = sv("g", { "class": "mark", tabindex: "0", "aria-label": d.labels[i] + ": " + fmt(v) });
+      var lab = d.labels[i].length > 28 ? d.labels[i].slice(0, 27) + "..." : d.labels[i];
+      g.appendChild(sv("rect", { x: 0, y: padT + i * rowH, width: W, height: rowH, "class": "hit" }));
+      g.appendChild(sv("text", { x: labW - 8, y: y + th / 2 + 4, "text-anchor": "end", "class": "tx" }, lab));
+      if (w >= 8) g.appendChild(sv("path", { "class": "bar", d: "M" + labW + "," + y + "h" + (w - 4) + "a4,4 0 0 1 4,4v" + (th - 8) + "a4,4 0 0 1 -4,4h" + (-(w - 4)) + "z" }));
+      else if (w > 0) g.appendChild(sv("rect", { "class": "bar", x: labW, y: y, width: w, height: th }));
+      g.appendChild(sv("text", { x: labW + w + 6, y: y + th / 2 + 4, "class": "tx val" }, fmtShort(v)));
+      bindTip(host, tip, g, function () { return [fmt(v), d.labels[i]]; });
+      svg.appendChild(g);
+    });
+    host.insertBefore(svg, tip);
+    return host;
+  }
+
+  function pieView(d) {
+    var host = h("div", "chart piewrap"), tip = makeTip(host);
+    var total = d.values.reduce(function (a, b) { return a + b; }, 0), R = 84, C = 100, a0 = -Math.PI / 2;
+    var svg = sv("svg", { viewBox: "0 0 200 200", "class": "svg pie", role: "img", "aria-label": "Pie chart of " + d.valueName + " by " + d.labelNames.join(" / ") });
+    var list = h("ul", "legend");
+    d.values.forEach(function (v, i) {
+      var a1 = a0 + v / total * Math.PI * 2, large = a1 - a0 > Math.PI ? 1 : 0;
+      var x0 = C + R * Math.cos(a0), y0 = C + R * Math.sin(a0), x1 = C + R * Math.cos(a1), y1 = C + R * Math.sin(a1);
+      var pct = (v / total * 100).toFixed(1) + "%";
+      var p = sv("path", { d: "M" + C + "," + C + "L" + x0.toFixed(2) + "," + y0.toFixed(2) + "A" + R + "," + R + " 0 " + large + " 1 " + x1.toFixed(2) + "," + y1.toFixed(2) + "Z", "class": "slice s" + (i + 1), tabindex: "0", "aria-label": d.labels[i] + ": " + fmt(v) + ", " + pct });
+      bindTip(host, tip, p, function () { return [fmt(v) + " (" + pct + ")", d.labels[i]]; });
+      svg.appendChild(p);
+      var li = h("li");
+      li.appendChild(h("span", "sw s" + (i + 1)));
+      li.appendChild(h("span", "lg-name", d.labels[i]));
+      li.appendChild(h("span", "lg-val", fmt(v) + "  " + pct));
+      list.appendChild(li);
+      a0 = a1;
+    });
+    host.insertBefore(svg, tip);
+    host.insertBefore(list, tip);
+    return host;
+  }
+
+  function lineView(d) {
+    var host = h("div", "chart"), tip = makeTip(host);
+    var n = d.values.length, W = 560, H = 230, L = 52, Rm = 28, T = 14, B = 30;
+    var max = niceMax(Math.max.apply(null, d.values)), width = W - L - Rm;
+    var svg = sv("svg", { viewBox: "0 0 " + W + " " + H, "class": "svg", role: "img", "aria-label": "Line chart of " + d.valueName + " by " + d.labelNames.join(" / ") });
+    function X(i) { return L + i * width / (n - 1); }
+    function Y(v) { return T + (H - T - B) * (1 - v / max); }
+    for (var k = 0; k <= 4; k++) {
+      var tv = max * k / 4, ty = Y(tv);
+      svg.appendChild(sv("line", { x1: L, x2: W - Rm, y1: ty, y2: ty, "class": k === 0 ? "axis" : "grid" }));
+      svg.appendChild(sv("text", { x: L - 8, y: ty + 4, "text-anchor": "end", "class": "tx mute" }, fmtShort(tv)));
+    }
+    var step = Math.ceil(n / 6);
+    for (var i = 0; i < n; i += step) svg.appendChild(sv("text", { x: X(i), y: H - 8, "text-anchor": "middle", "class": "tx mute" }, d.labels[i]));
+    svg.appendChild(sv("polyline", { points: d.values.map(function (v, j) { return X(j).toFixed(1) + "," + Y(v).toFixed(1); }).join(" "), "class": "ln" }));
+    var cross = sv("line", { y1: T, y2: H - B, x1: 0, x2: 0, "class": "cross", visibility: "hidden" });
+    var dot = sv("circle", { r: 5, cx: 0, cy: 0, "class": "dot", visibility: "hidden" });
+    svg.appendChild(cross);
+    svg.appendChild(sv("circle", { r: 5, cx: X(n - 1), cy: Y(d.values[n - 1]), "class": "dot" }));
+    svg.appendChild(dot);
+    var over = sv("rect", { x: L, y: T, width: width, height: H - T - B, "class": "overlay", tabindex: "0", "aria-label": "Use the left and right arrow keys to read each value" });
+    svg.appendChild(over);
+    var cur = -1;
+    function pick(j) {
+      cur = Math.max(0, Math.min(n - 1, j));
+      cross.setAttribute("x1", X(cur)); cross.setAttribute("x2", X(cur)); cross.setAttribute("visibility", "visible");
+      dot.setAttribute("cx", X(cur)); dot.setAttribute("cy", Y(d.values[cur])); dot.setAttribute("visibility", "visible");
+      var sr = svg.getBoundingClientRect(), hr = host.getBoundingClientRect(), sc = sr.width / W;
+      placeTip(host, tip, sr.left - hr.left + X(cur) * sc, sr.top - hr.top + Y(d.values[cur]) * sc, fmt(d.values[cur]), d.labels[cur]);
+    }
+    function hide() { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); tip.hidden = true; }
+    over.addEventListener("pointermove", function (ev) {
+      var sr = svg.getBoundingClientRect(), rel = (ev.clientX - sr.left) / (sr.width / W);
+      pick(Math.round((rel - L) / (width / (n - 1))));
+    });
+    over.addEventListener("pointerleave", hide);
+    over.addEventListener("focus", function () { pick(cur < 0 ? n - 1 : cur); });
+    over.addEventListener("blur", hide);
+    over.addEventListener("keydown", function (ev) {
+      if (ev.key === "ArrowLeft") { ev.preventDefault(); pick(cur - 1); }
+      else if (ev.key === "ArrowRight") { ev.preventDefault(); pick(cur + 1); }
+    });
+    host.insertBefore(svg, tip);
+    return host;
+  }
+
+  function groupsView(info) {
+    var items = info.itemNames.join(" / ");
+    var host = h("div", "gv");
+    host.setAttribute("role", "group");
+    host.setAttribute("aria-label", "Groups of " + items + " by " + info.groupName);
+    host.appendChild(h("p", "gv-title", items + " grouped by " + info.groupName + " (" + info.rowCount + " rows, " + info.groups.length + " groups)"));
+    var list = h("ul", "gv-list");
+    info.groups.forEach(function (g) {
+      var li = h("li", "gv-row");
+      li.appendChild(h("span", "gv-label", g.label));
+      var blocks = h("span", "gv-blocks");
+      g.items.forEach(function (text) {
+        var b = h("span", "gv-block", text);
+        b.title = text;
+        blocks.appendChild(b);
+      });
+      li.appendChild(blocks);
+      li.appendChild(h("span", "gv-count", String(g.items.length)));
+      list.appendChild(li);
+    });
+    host.appendChild(list);
+    host.appendChild(h("p", "gv-note", "One block per row. The page draws no number the SQL did not return."));
+    return host;
+  }
+
+  function chartSection(d) {
+    var av = availability(d.columns, d.rows);
+    var sec = h("div", "sec");
+    sec.appendChild(h("h3", "", "Chart views"));
+    var ul = h("ul", "checks");
+    [["bar", "Bar chart"], ["pie", "Pie chart"], ["line", "Line chart"], ["groups", "Groups"]].forEach(function (v) {
+      var li = h("li"), ok = av[v[0]] === "";
+      li.appendChild(h("span", "check-name", v[1]));
+      li.appendChild(pill(ok ? "ok" : "idle", ok ? "available" : "not available"));
+      li.appendChild(h("span", "check-detail", ok ? "Drawn in this page from the rows shown" : av[v[0]]));
+      ul.appendChild(li);
+    });
+    sec.appendChild(ul);
+    sec.appendChild(h("p", "memnote", "The model writes the SQL only. Charts are drawn in your browser from the returned rows, and the Table view always shows the same values."));
+    if (d.truncated) sec.appendChild(h("p", "memnote", "The result was cut at " + d.limits.max_rows + " rows; the chart shows only those rows."));
+    return sec;
+  }
+
+  function hasSql(d) {
+    return !!d && (d.error_kind === null || d.error_kind === "rejected" || d.error_kind === "timeout");
+  }
+
+  function copySql(text, btn) {
+    function done(msg) { btn.textContent = msg; setTimeout(function () { btn.textContent = "Copy"; }, 1500); }
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      done(ok ? "Copied" : "Select and copy");
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done("Copied"); }, fallback);
+    } else { fallback(); }
+  }
+
+  function memDetail(t) {
+    if (t.outcome === "answered") return "Sent: the question, the SQL that ran, the columns (" + t.columns.join(", ") + ") and the row count (" + t.row_count + "). Row values are not sent.";
+    return "Sent: the question and a note that the query was " + (t.outcome === "timeout" ? "stopped" : "blocked") + ".";
+  }
+
+  function memorySection(sent) {
+    var sec = h("div", "sec");
+    sec.appendChild(h("h3", "", "Memory sent with this question"));
+    if (sent === null) {
+      sec.appendChild(h("p", "memnote", "None. This entry does not use memory."));
+      return sec;
+    }
+    if (sent.length === 0) {
+      sec.appendChild(h("p", "memnote", "None. This was the first question in the session."));
+      return sec;
+    }
+    var ul = h("ul", "memlist");
+    sent.forEach(function (t) {
+      var li = h("li");
+      li.appendChild(h("span", "mem-q", t.question));
+      li.appendChild(h("span", "mem-d", memDetail(t)));
+      ul.appendChild(li);
+    });
+    sec.appendChild(ul);
+    sec.appendChild(h("p", "memnote", "The model treats these as background data, not as instructions."));
+    return sec;
+  }
+
+  function renderReport(d, sent) {
+    reportEl.textContent = "";
+    rstateEl.textContent = "";
+    if (!hasSql(d)) {
+      reportEl.appendChild(h("p", "report-empty", d && d.builtin ? "No SQL ran for this entry." : EMPTY_REPORT));
+      if (sent !== undefined) reportEl.appendChild(memorySection(sent));
+      return;
+    }
+    var kind = d.error_kind;
+    if (kind === null) rstateEl.appendChild(pill("ok", "passed"));
+    else rstateEl.appendChild(pill("bad", kind === "timeout" ? "stopped" : "blocked"));
+
+    var sec1 = h("div", "sec");
+    var top = h("div", "sec-top");
+    var heading = d.source === "demo" ? "SQL written by the demo, not the model" : (kind === null ? "SQL that ran" : "SQL the model wrote");
+    top.appendChild(h("h3", "", heading));
+    var copy = h("button", "copy", "Copy"); copy.type = "button";
+    copy.addEventListener("click", function () { copySql(d.sql, copy); });
+    top.appendChild(copy);
+    sec1.appendChild(top);
+    var pre = h("pre"); pre.appendChild(highlight(d.sql));
+    sec1.appendChild(pre);
+    reportEl.appendChild(sec1);
+
+    var sec2 = h("div", "sec");
+    sec2.appendChild(h("h3", "", "Checks"));
+    var ul = h("ul", "checks");
+    checksFor(d).forEach(function (c) {
+      var li = h("li");
+      li.appendChild(h("span", "check-name", c.name));
+      li.appendChild(pill(c.state, c.label));
+      li.appendChild(h("span", "check-detail", c.detail));
+      ul.appendChild(li);
+    });
+    sec2.appendChild(ul);
+    reportEl.appendChild(sec2);
+    if (kind === null) reportEl.appendChild(chartSection(d));
+    if (sent !== undefined) reportEl.appendChild(memorySection(sent));
+  }
+
+  function select(el, d, sent) {
+    if (selected) selected.removeAttribute("aria-current");
+    selected = el;
+    if (el) el.setAttribute("aria-current", "true");
+    renderReport(d, sent);
+  }
+
+  function updateCount() {
+    countEl.textContent = "Memory: " + Math.min(turns.length, windowSize) + " of " + windowSize + " questions";
+    newEl.disabled = exchanges.length === 0 || controller !== null;
+  }
+
+  function flat(text) { return String(text).replace(/\s*\n\s*/g, " ").trim(); }
+
+  // A turn holds text only: never row values. Rejected and stopped queries
+  // keep no SQL, so what the report says was sent is exactly what is sent.
+  function makeTurn(question, d) {
+    var kind = d.error_kind;
+    var outcome = kind === null ? "answered" : (kind === "rejected" || kind === "timeout" ? kind : null);
+    if (!outcome) return null;
+    var turn = { question: flat(question), sql: "", columns: [], row_count: 0, outcome: outcome };
+    if (outcome === "answered") {
+      turn.sql = String(d.sql);
+      turn.columns = d.columns.map(String);
+      turn.row_count = d.rows.length;
+    }
+    var texts = [turn.question, turn.sql].concat(turn.columns);
+    if (turn.question.length < 1 || turn.question.length > 500 || turn.sql.length > 2000 || turn.columns.length > 30) return null;
+    for (var i = 0; i < texts.length; i++) {
+      if (CONTROL.test(texts[i]) || MARKER.test(texts[i])) return null;
+      if (i >= 2 && (texts[i].length < 1 || texts[i].length > 64)) return null;
+    }
+    return turn;
+  }
+
+  function fitTurns(list) {
+    var out = list.slice();
+    function total() {
+      return out.reduce(function (n, t) { return n + t.question.length + t.sql.length + t.columns.join("").length; }, 0);
+    }
+    while (out.length && total() > MAX_SENT_CHARS) out.shift();
+    return out;
+  }
+
+  function refreshMemory() {
+    if (dividerEl && dividerEl.parentNode) dividerEl.parentNode.removeChild(dividerEl);
+    dividerEl = null;
+    var cut = -1;
+    if (turns.length > windowSize) {
+      var oldest = turns[turns.length - windowSize];
+      for (var i = 0; i < exchanges.length; i++) if (exchanges[i].turn === oldest) cut = i;
+    }
+    exchanges.forEach(function (x, i) {
+      var old = cut > 0 && i < cut;
+      x.bubble.classList.toggle("old", old);
+      x.reply.classList.toggle("old", old);
+    });
+    if (cut > 0) {
+      dividerEl = h("div", "divider", "Above: no longer remembered");
+      thread.insertBefore(dividerEl, exchanges[cut].bubble);
+    }
+    updateCount();
+  }
+
+  function newSession() {
+    if (controller) return;
+    while (thread.firstChild) thread.removeChild(thread.firstChild);
+    turns = []; exchanges = []; dividerEl = null; msgs = 0; selected = null;
+    emptyEl.firstChild.textContent = "New session.";
+    emptyEl.lastChild.textContent = "Memory is empty. Ask a full question, or open Examples.";
+    thread.appendChild(emptyEl);
+    examplesEl.open = true;
+    renderReport(null);
+    updateCount();
+    qEl.focus();
+  }
+  newEl.addEventListener("click", newSession);
+
+  function setMemoryTexts() {
+    hintEl.textContent = "Enter sends. Shift+Enter adds a new line. The last " + windowSize + " questions are remembered in this page until you reload or start a new session.";
+  }
+
+  function tableBlock(d) {
+    var wrap = h("div", "scroll");
+    var table = h("table");
+    var numeric = d.columns.map(function (c, i) { return isNumberColumn(d.rows, i); });
+    var thead = h("thead"); var trh = h("tr");
+    d.columns.forEach(function (name, i) { trh.appendChild(h("th", numeric[i] ? "right" : "", name)); });
+    thead.appendChild(trh); table.appendChild(thead);
+    var tbody = h("tbody");
+    d.rows.forEach(function (r) {
+      var tr = h("tr");
+      r.forEach(function (v, i) { tr.appendChild(h("td", numeric[i] ? "right" : "", fmt(v))); });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody); wrap.appendChild(table);
+    return wrap;
+  }
+
+  // The chevron, the one-line question shown when collapsed, and the double-click on the header row.
+  var LEGEND = "A dot marks the table that holds the foreign key; the line runs to the table it points at. Lines pass behind boxes.";
+
+  function toggleCard(button) {
+    var card = button.closest(".reply");
+    if (!card) return;
+    var collapsed = card.classList.toggle("collapsed");
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    button.setAttribute("aria-label", collapsed ? "Expand this answer" : "Collapse this answer");
+  }
+
+  function addCollapse(top, question) {
+    var chevron = h("button", "chev");
+    chevron.type = "button";
+    chevron.setAttribute("aria-expanded", "true");
+    chevron.setAttribute("aria-label", "Collapse this answer");
+    chevron.addEventListener("click", function () { toggleCard(chevron); });
+    top.insertBefore(chevron, top.firstChild);
+    top.appendChild(h("p", "meta qline", String(question || "")));
+    // Only the header row reacts: a double-click on body text must keep selecting a word.
+    top.addEventListener("dblclick", function (e) {
+      if (e.target && e.target.closest && e.target.closest("button, a, input, textarea, select")) return;
+      toggleCard(chevron);
+      var selection = window.getSelection && window.getSelection();
+      if (selection) selection.removeAllRanges();
+    });
+  }
+
+  function hatched(title, body) {
+    var b = h("div", "blocked");
+    b.appendChild(h("strong", "", title));
+    b.appendChild(h("p", "", body));
+    return b;
+  }
+
+  function tryAgain(request) {
+    var again = h("button", "go", "Try again");
+    again.type = "button";
+    again.addEventListener("click", function () { send(request); });
+    return again;
+  }
+
+  var PARAGRAPH_MIN = 120;
+
+  // One row, one column and a long text value is shown as a paragraph, not a table.
+  function isParagraph(d) {
+    return d.rows.length === 1 && d.columns.length === 1 && typeof d.rows[0][0] === "string" && d.rows[0][0].length > PARAGRAPH_MIN;
+  }
+
+  function tableOrParagraph(d) {
+    return isParagraph(d) ? h("p", "paragraph", d.rows[0][0]) : tableBlock(d);
+  }
+  var VIEWS = [["table", "Table"], ["bar", "Bar"], ["pie", "Pie"], ["line", "Line"], ["groups", "Groups"]];
+
+  function replyBody(d, request) {
+    var box = document.createDocumentFragment();
+    var kind = d.error_kind;
+    if (kind === null) {
+      var top = h("div", "reply-top");
+      top.appendChild(pill("ok", "Answered"));
+      var n = d.rows.length;
+      top.appendChild(h("p", "meta", n + (n === 1 ? " row" : " rows") + ", " + seconds(d.query_s) + " s"));
+      box.appendChild(top);
+      var av = availability(d.columns, d.rows);
+      var choice = pickView(wanted(request && request.question), av);
+      var seg = h("div", "seg viewseg hide-c");
+      seg.setAttribute("role", "group");
+      seg.setAttribute("aria-label", "Result view");
+      var body = h("div", "viewbody");
+      var buttons = {};
+      var show = function (v) {
+        body.textContent = "";
+        body.appendChild(v === "table" ? tableOrParagraph(d) : v === "bar" ? barView(av.data) : v === "pie" ? pieView(av.data) : v === "line" ? lineView(av.data) : groupsView(av.groupsInfo));
+        VIEWS.forEach(function (x) { buttons[x[0]].setAttribute("aria-pressed", x[0] === v ? "true" : "false"); });
+      };
+      VIEWS.forEach(function (x) {
+        var b = h("button", "", x[1]);
+        b.type = "button";
+        var why = x[0] === "table" ? "" : av[x[0]];
+        if (why) { b.disabled = true; b.title = why; }
+        b.addEventListener("click", function () { show(x[0]); });
+        buttons[x[0]] = b;
+        seg.appendChild(b);
+      });
+      top.appendChild(seg);
+      var refusal = isRefusal(d);
+      var exportNote = h("p", "note");
+      exportNote.hidden = true;
+      if (!refusal && !isParagraph(d) && d.columns.length > 0 && d.rows.length > 0) {
+        var csvButton = h("button", "copy hide-c", "CSV");
+        csvButton.type = "button";
+        csvButton.addEventListener("click", function () { exportCsv(d, exportNote); });
+        top.appendChild(csvButton);
+        if (d.truncated) top.appendChild(h("span", "meta hide-c", "CSV holds the " + d.limits.max_rows + " rows shown."));
+      }
+      addCollapse(top, request && request.question);
+      box.appendChild(body);
+      if (refusal) box.appendChild(h("p", "note", REFUSAL_HINT));
+      show(choice.view);
+      if (choice.note) box.appendChild(h("p", "note", choice.note));
+      else if (av.bar && av.bar === av.pie && av.pie === av.line) box.appendChild(h("p", "note", av.bar));
+      if (d.truncated) box.appendChild(h("p", "note", "The result was cut at " + d.limits.max_rows + " rows."));
+      // The note for a failed save goes last so it never changes which note comes first.
+      box.appendChild(exportNote);
+    } else if (kind === "rejected" || kind === "timeout") {
+      var top2 = h("div", "reply-top");
+      top2.appendChild(pill("bad", kind === "timeout" ? "Stopped" : "Blocked"));
+      box.appendChild(top2);
+      box.appendChild(hatched(kind === "timeout" ? "Stopped at the time limit" : "Blocked before it ran", d.error || ""));
+    } else if (kind === "model") {
+      box.appendChild(h("p", "plain", (d.error || "The model could not produce a query.") + " If the free quota is used up, try again in a minute."));
+    } else if (kind === "quota" || kind === "rate_limited") {
+      // Retrying at once would only fail again, so there is no button here.
+      var topq = h("div", "reply-top");
+      topq.appendChild(pill("idle", kind === "quota" ? "Quota used" : "Slow down"));
+      box.appendChild(topq);
+      var waitText = typeof d.retry_after_s === "number" ? "You are asking too fast. Please wait " + d.retry_after_s + " seconds." : "You are asking too fast. Please wait a moment.";
+      box.appendChild(h("p", "plain", kind === "quota" ? (d.error || "The free model quota is used up for now. Please try again in a minute.") : waitText));
+    } else if (kind === "unavailable") {
+      var topu = h("div", "reply-top");
+      topu.appendChild(pill("idle", "Busy"));
+      box.appendChild(topu);
+      box.appendChild(h("p", "plain", d.error || "The model service is busy or slow right now. Please try again."));
+      box.appendChild(tryAgain(request));
+    } else if (kind === "busy") {
+      box.appendChild(h("p", "plain", d.error || "The service is busy, please try again in a moment."));
+      box.appendChild(tryAgain(request));
+    } else {
+      box.appendChild(h("p", "plain", d.error || "That question could not be used."));
+    }
+    return box;
+  }
+
+  function failureText(err, timedOut) {
+    if (timedOut) return "The request took too long. Please try again.";
+    if (err && err.status === 413) return "That request was too large. Please use a shorter question.";
+    if (err && err.status === 422) return "That question could not be accepted. Please use a shorter question.";
+    if (err && err.status) return "Something went wrong (status " + err.status + "). Please try again.";
+    if (err && err.name === "SyntaxError") return "The server sent an answer that could not be read. Please try again.";
+    return "Could not reach the server. Check your connection and try again.";
+  }
+
+  function setReply(reply, node, d, sent) {
+    reply.textContent = "";
+    reply.appendChild(node);
+    var activate = function () { select(reply, d, sent); };
+    reply.addEventListener("click", function (e) { if (e.target.closest && e.target.closest("button")) return; activate(); });
+    reply.addEventListener("keydown", function (e) { if (e.target === reply && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); activate(); } });
+    activate();
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  function send(request) {
+    if (controller) controller.abort();
+    var mine = new AbortController();
+    controller = mine;
+    var timedOut = false;
+    var timer = setTimeout(function () { timedOut = true; mine.abort(); }, CLIENT_TIMEOUT_MS);
+    goEl.disabled = true;
+
+    if (emptyEl.parentNode) emptyEl.parentNode.removeChild(emptyEl);
+    if (msgs === 0) examplesEl.open = false;
+    var bubble = h("div", "bubble", request.question);
+    thread.appendChild(bubble);
+    var reply = h("div", "reply");
+    reply.setAttribute("tabindex", "0");
+    reply.appendChild(h("p", "working", request.working));
+    thread.appendChild(reply);
+    msgs += 2;
+    var exchange = { bubble: bubble, reply: reply, turn: null };
+    exchanges.push(exchange);
+    refreshMemory();
+    thread.scrollTop = thread.scrollHeight;
+
+    fetch(request.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request.body),
+      signal: mine.signal
+    }).then(function (res) {
+      if (res.status === 429) {
+        // The server's own limit answers with a body shaped like any other failed answer.
+        return res.json().then(function (body) {
+          if (!body || body.error_kind !== "rate_limited") {
+            var limited = new Error("status");
+            limited.status = 429;
+            throw limited;
+          }
+          var waited = parseInt(res.headers.get("Retry-After"), 10);
+          if (waited > 0) body.retry_after_s = waited;
+          return body;
+        });
+      }
+      if (res.status !== 200) {
+        var failure = new Error("status");
+        failure.status = res.status;
+        throw failure;
+      }
+      return res.json();
+    }).then(function (d) {
+      if (controller !== mine) { setReply(reply, h("p", "plain", "Replaced by a newer question."), null, request.sent); return; }
+      var turn = request.remember ? makeTurn(request.question, d) : null;
+      if (turn) { turns.push(turn); exchange.turn = turn; }
+      setReply(reply, replyBody(d, request), d, request.sent);
+    }).catch(function (err) {
+      if (controller !== mine) { setReply(reply, h("p", "plain", "Replaced by a newer question."), null, request.sent); return; }
+      setReply(reply, h("p", "plain", failureText(err, timedOut)), null, request.sent);
+    }).then(function () {
+      clearTimeout(timer);
+      if (controller === mine) {
+        controller = null;
+        goEl.disabled = false;
+      }
+      refreshMemory();
+    });
+  }
+
+  var DIAGRAM_NOTE = "Shown from the built-in Database map because the question asked for a diagram.";
+
+  function askText(text) {
+    // A request for a diagram is answered here from the built-in map: no request, no model, no memory.
+    if (wantsDiagram(text)) {
+      showMap(text, DIAGRAM_NOTE);
+      return;
+    }
+    var sent = fitTurns(turns.slice(-windowSize));
+    send({ url: "/api/ask", body: { question: text, history: sent }, question: text, working: "Model is writing the SQL...", remember: true, sent: sent });
+  }
+
+  function addGroup(name, items, danger) {
+    var wrap = h("div", "group");
+    wrap.appendChild(h("div", "group-name", name));
+    items.forEach(function (item) {
+      var chip = h("button", "chip" + (danger ? " danger" : ""), item.label);
+      chip.type = "button";
+      chip.addEventListener("click", item.pick);
+      wrap.appendChild(chip);
+    });
+    groupsEl.appendChild(wrap);
+    return wrap;
+  }
+
+  function mapBody(data, extra, question) {
+    if (!data || !Array.isArray(data.tables)) throw new Error("shape");
+    var layout = diagramLayout(data);
+    var keys = 0;
+    data.tables.forEach(function (t) { keys += t.foreign_keys.length; });
+    var box = document.createDocumentFragment();
+    var top = h("div", "reply-top");
+    top.appendChild(pill("idle", "Built in, no model call"));
+    top.appendChild(h("p", "meta", data.tables.length + (data.tables.length === 1 ? " table, " : " tables, ") + keys + (keys === 1 ? " foreign key" : " foreign keys")));
+    var mapNote = h("p", "note");
+    mapNote.hidden = true;
+    var seg = h("div", "seg viewseg hide-c");
+    seg.setAttribute("role", "group");
+    seg.setAttribute("aria-label", "Map view");
+    var diagramButton = h("button", "", "Diagram");
+    var listButton = h("button", "", "List");
+    diagramButton.type = "button";
+    listButton.type = "button";
+    seg.appendChild(diagramButton);
+    seg.appendChild(listButton);
+    top.appendChild(seg);
+    var saveButton = h("button", "copy hide-c", "Save as image");
+    saveButton.type = "button";
+    saveButton.addEventListener("click", function () { saveMapImage(data, mapNote); });
+    top.appendChild(saveButton);
+    addCollapse(top, question || "Database map");
+    box.appendChild(top);
+    box.appendChild(mapNote);
+    if (extra) box.appendChild(h("p", "note", extra));
+    var diagram = h("div", "");
+    diagram.appendChild(diagramView(layout, data));
+    diagram.appendChild(h("p", "dg-legend", LEGEND));
+    var list = h("ul", "checks");
+    data.tables.forEach(function (t) {
+      var li = h("li");
+      li.appendChild(h("span", "check-name", t.name));
+      li.appendChild(h("span", "check-detail", "Columns: " + t.columns.map(function (c) { return c.type ? c.name + " (" + c.type + ")" : c.name; }).join(", ")));
+      t.foreign_keys.forEach(function (k) {
+        li.appendChild(h("span", "check-detail", k.column + " -> " + k.ref_table + "." + k.ref_column));
+      });
+      list.appendChild(li);
+    });
+    function showView(view) {
+      diagram.hidden = view !== "diagram";
+      list.hidden = view !== "list";
+      diagramButton.setAttribute("aria-pressed", view === "diagram" ? "true" : "false");
+      listButton.setAttribute("aria-pressed", view === "list" ? "true" : "false");
+    }
+    diagramButton.addEventListener("click", function () { showView("diagram"); });
+    listButton.addEventListener("click", function () { showView("list"); });
+    box.appendChild(diagram);
+    box.appendChild(list);
+    showView("diagram");
+    return box;
+  }
+
+  // The chip calls this with no arguments; a typed diagram request passes the visitor's words and a line saying why the map is shown.
+  function showMap(label, extra) {
+    if (emptyEl.parentNode) emptyEl.parentNode.removeChild(emptyEl);
+    if (msgs === 0) examplesEl.open = false;
+    var bubble = h("div", "bubble", typeof label === "string" ? label : "Database map");
+    thread.appendChild(bubble);
+    var reply = h("div", "reply");
+    reply.setAttribute("tabindex", "0");
+    reply.appendChild(h("p", "working", "Reading the database..."));
+    thread.appendChild(reply);
+    msgs += 2;
+    exchanges.push({ bubble: bubble, reply: reply, turn: null });
+    refreshMemory();
+    thread.scrollTop = thread.scrollHeight;
+    fetch("/api/schema").then(function (res) {
+      if (res.status !== 200) {
+        var failure = new Error("status");
+        failure.status = res.status;
+        throw failure;
+      }
+      return res.json();
+    }).then(function (data) {
+      setReply(reply, mapBody(data, typeof extra === "string" ? extra : "", typeof label === "string" ? label : ""), { builtin: true }, null);
+    }).catch(function (err) {
+      setReply(reply, h("p", "plain", failureText(err, false)), null, null);
+    });
+  }
+
+  function showAbout() {
+    if (emptyEl.parentNode) emptyEl.parentNode.removeChild(emptyEl);
+    if (msgs === 0) examplesEl.open = false;
+    var bubble = h("div", "bubble", "About this database");
+    thread.appendChild(bubble);
+    var reply = h("div", "reply");
+    reply.setAttribute("tabindex", "0");
+    reply.appendChild(h("p", "working", "Reading the text..."));
+    thread.appendChild(reply);
+    msgs += 2;
+    exchanges.push({ bubble: bubble, reply: reply, turn: null });
+    refreshMemory();
+    thread.scrollTop = thread.scrollHeight;
+    fetch("/api/about").then(function (res) {
+      if (res.status !== 200) {
+        var failure = new Error("status");
+        failure.status = res.status;
+        throw failure;
+      }
+      return res.json();
+    }).then(function (data) {
+      if (!data || typeof data.text !== "string") throw new Error("shape");
+      var box = document.createDocumentFragment();
+      var top = h("div", "reply-top");
+      top.appendChild(pill("idle", "Built in, no model call"));
+      addCollapse(top, "About this database");
+      box.appendChild(top);
+      box.appendChild(h("p", "paragraph", data.text));
+      setReply(reply, box, { builtin: true }, null);
+    }).catch(function (err) {
+      setReply(reply, h("p", "plain", failureText(err, false)), null, null);
+    });
+  }
+
+  function buildGroups() {
+    addGroup("Try a question", EXAMPLES.map(function (q) {
+      return { label: q, pick: function () { qEl.value = q; submitBox(); } };
+    }), false);
+    addGroup("Charts", CHART_QUESTIONS.map(function (q) {
+      return { label: q, pick: function () { qEl.value = q; submitBox(); } };
+    }), false);
+    addGroup("Built in", [{ label: "Database map", pick: function () { showMap(); } }, { label: "About this database", pick: showAbout }], false);
+    fetch("/api/sandbox-demos").then(function (res) {
+      if (res.status !== 200) throw new Error("status");
+      return res.json();
+    }).then(function (list) {
+      if (!Array.isArray(list) || !list.length) return;
+      addGroup("Sandbox demos", list.map(function (demo) {
+        return {
+          label: String(demo.label),
+          pick: function () {
+            send({ url: "/api/sandbox-demo", body: { id: demo.id }, question: String(demo.label), working: "Sandbox is checking and running it...", remember: false, sent: null });
+          }
+        };
+      }), true);
+    }).catch(function () {});
+  }
+
+  function showLimits() {
+    fetch("/api/limits").then(function (res) {
+      if (res.status !== 200) throw new Error("status");
+      return res.json();
+    }).then(function (lim) {
+      var parts = [];
+      if (typeof lim.memory_turns === "number" && lim.memory_turns >= 1 && lim.memory_turns <= 20) windowSize = Math.floor(lim.memory_turns);
+      setMemoryTexts();
+      refreshMemory();
+      if (typeof lim.slots === "number") parts.push(lim.slots > 1 ? lim.slots + " queries at a time" : "one query at a time");
+      if (typeof lim.timeout_s === "number") parts.push(lim.timeout_s.toFixed(1) + " s per query");
+      if (typeof lim.max_rows === "number") parts.push(lim.max_rows + " rows");
+      parts.push("read-only copy per request");
+      if (typeof lim.rate_limit_per_minute === "number") parts.push(lim.rate_limit_per_minute + " questions per minute");
+      parts.push("memory: last " + windowSize + " questions, rows never sent");
+      limitsEl.textContent = "Limits: " + parts.join(" | ");
+    }).catch(function () {});
+  }
+
+  function grow() {
+    qEl.style.height = "auto";
+    var hgt = Math.min(qEl.scrollHeight + 2, MAX_BOX);
+    qEl.style.height = hgt + "px";
+    qEl.style.overflowY = qEl.scrollHeight + 2 > MAX_BOX ? "auto" : "hidden";
+  }
+
+  function submitBox() {
+    var text = qEl.value.trim();
+    if (!text) return;
+    qEl.value = ""; grow();
+    askText(text);
+  }
+
+  qEl.addEventListener("input", grow);
+  qEl.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitBox(); }
+  });
+  formEl.addEventListener("submit", function (e) {
+    e.preventDefault();
+    submitBox();
+  });
+
+  var themeBtns = document.querySelectorAll(".seg button");
+  function applyTheme(t) {
+    var mode = (t === "dark" || t === "light") ? t : "system";
+    if (mode === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+    for (var i = 0; i < themeBtns.length; i++) themeBtns[i].setAttribute("aria-pressed", themeBtns[i].getAttribute("data-t") === mode ? "true" : "false");
+  }
+  for (var i = 0; i < themeBtns.length; i++) {
+    themeBtns[i].addEventListener("click", function (e) {
+      var t = e.currentTarget.getAttribute("data-t");
+      applyTheme(t);
+      try { localStorage.setItem("ask-northwind-theme", t); } catch (err) {}
+    });
+  }
+  var saved = null;
+  try { saved = localStorage.getItem("ask-northwind-theme"); } catch (err) {}
+  applyTheme(saved === "light" || saved === "system" ? saved : "dark");
+
+  buildGroups();
+  showLimits();
+  renderReport(null);
+  grow();
+})();
+</script>
+
+</body>
+</html>
