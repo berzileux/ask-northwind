@@ -321,6 +321,7 @@ def test_limits_route_gives_exactly_the_three_values(client):
         "slots": pipeline.GATE_SLOTS,
         "memory_turns": 6,
         "rate_limit_per_minute": 10,
+        "model": "gemini-3.1-flash-lite",
     }
 
 
@@ -636,3 +637,26 @@ def test_the_policy_needs_no_image_source_for_the_exports(client):
     assert "data:" not in policy and "blob:" not in policy
     assert policy.startswith("default-src 'none'; script-src 'nonce-")
     assert policy.endswith("connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+
+
+def test_limits_reports_the_model_constant(client):
+    import model
+
+    assert client.get("/api/limits").json()["model"] == model.MODEL_NAME == app.MODEL_NAME
+
+
+def test_limits_model_field_works_without_a_key_and_with_the_api_headers(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    response = client.get("/api/limits")
+    assert response.status_code == 200
+    assert isinstance(response.json()["model"], str)
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_limits_has_no_field_beyond_the_known_ones_and_no_key_text(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "secret-key-value-123")
+    response = client.get("/api/limits")
+    assert set(response.json()) == {"timeout_s", "max_rows", "slots", "memory_turns", "rate_limit_per_minute", "model"}
+    assert "secret-key-value-123" not in response.text
+    assert "key" not in " ".join(response.json()).lower()

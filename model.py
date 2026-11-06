@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 log = logging.getLogger(__name__)
 
@@ -7,6 +8,9 @@ MAX_OUTPUT_TOKENS = 512
 REQUEST_TIMEOUT_MS = 20000
 # The name is fixed in code so the evaluated model and the served model cannot drift apart.
 MODEL_NAME = "gemini-3.1-flash-lite"
+# The page shows this name, so a value that is empty or carries odd characters stops the app at import.
+if not re.fullmatch(r"[A-Za-z0-9._/-]{1,64}", MODEL_NAME):
+    raise ValueError("MODEL_NAME must be 1 to 64 characters from letters, digits, dot, underscore, slash and hyphen")
 
 
 # HTTP statuses the provider uses for a used-up quota and for a service that is

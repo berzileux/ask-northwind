@@ -17,6 +17,8 @@
   --strong: #000000;
   --accent: #34c759;
   --accent-ink: #000000;
+  /* The plain accent is too light against a white pill, so the dot has its own green. */
+  --dot-ok: #248a3d;
   --code-bg: #f2f2f7;
   --hatch: #dcdce1;
   --sql-kw: #1a7f37;
@@ -38,6 +40,7 @@
     --edge: #3a3a3c;
     --strong: #d1d1d6;
     --accent: #30d158;
+    --dot-ok: #30d158;
     --code-bg: #111113;
     --hatch: #2c2c2e;
     --sql-kw: #5ee07d;
@@ -58,6 +61,7 @@
   --edge: #3a3a3c;
   --strong: #d1d1d6;
   --accent: #30d158;
+  --dot-ok: #30d158;
   --code-bg: #111113;
   --hatch: #2c2c2e;
   --sql-kw: #5ee07d;
@@ -86,9 +90,15 @@ button { font: inherit; cursor: pointer; }
 
 .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 
-.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px; }
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; }
+.titlegroup { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
 h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
-.sub { margin: 4px 0 0; color: var(--muted); max-width: 56ch; }
+/* 14px so the sentence fits one line from about 900px wide; at 16px it needs about 920px. */
+.sub { flex: 1 0 100%; margin: 0; color: var(--muted); font-size: 14px; }
+.model-pill { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 3px 11px 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: 12px var(--font-mono); }
+.model-pill .mdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dot-ok); }
+.model-pill.stopped .mdot { background: repeating-linear-gradient(135deg, var(--strong) 0 2px, var(--surface) 2px 4px); box-shadow: 0 0 0 1px var(--strong); }
+.model-pill .mname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .seg { display: inline-flex; border: 1px solid var(--edge); border-radius: 10px; overflow: hidden; background: var(--surface); }
 .seg button { background: transparent; color: var(--ink); border: 0; padding: 7px 14px; font-size: 14px; font-weight: 500; }
@@ -298,9 +308,9 @@ pre { margin: 0; background: var(--code-bg); border-radius: 10px; padding: 12px 
 
 <div class="wrap">
   <header class="top">
-    <div>
+    <div class="titlegroup">
       <h1>ask-northwind</h1>
-      <p class="sub">Ask the Northwind sample database a question in plain English. The page shows the answer and the SQL that ran.</p>
+      <div class="model-pill" id="modelpill" role="group" hidden><span class="mdot" aria-hidden="true"></span><span class="mname"></span></div>
     </div>
     <div class="tools">
       <div class="seg" role="group" aria-label="Theme">
@@ -309,6 +319,7 @@ pre { margin: 0; background: var(--code-bg); border-radius: 10px; padding: 12px 
         <button type="button" data-t="system" aria-pressed="true">System</button>
       </div>
     </div>
+    <p class="sub">Ask the Northwind sample database a question in plain English. The page shows the answer and the SQL that ran.</p>
   </header>
 
   <p class="notice" role="note">Demo only. Do not enter private information. Questions go to a hosted AI model and may be used by its provider to improve its models.</p>
@@ -1534,6 +1545,7 @@ pre { margin: 0; background: var(--code-bg); border-radius: 10px; padding: 12px 
       if (controller !== mine) { setReply(reply, h("p", "plain", "Replaced by a newer question."), null, request.sent); return; }
       var turn = request.remember ? makeTurn(request.question, d) : null;
       if (turn) { turns.push(turn); exchange.turn = turn; }
+      if (request.url === "/api/ask") noteModelOutcome(d);
       setReply(reply, replyBody(d, request), d, request.sent);
     }).catch(function (err) {
       if (controller !== mine) { setReply(reply, h("p", "plain", "Replaced by a newer question."), null, request.sent); return; }
@@ -1715,12 +1727,40 @@ pre { margin: 0; background: var(--code-bg); border-radius: 10px; padding: 12px 
     }).catch(function () {});
   }
 
+  var modelPill = document.getElementById("modelpill");
+  var modelName = "";
+
+  // The name only ever comes from /api/limits; without it the pill stays hidden.
+  function showModelName(name) {
+    if (typeof name !== "string" || !name.trim()) return;
+    modelName = name.trim();
+    modelPill.querySelector(".mname").textContent = modelName;
+    modelPill.setAttribute("aria-label", "Model: " + modelName);
+    setModelDot("");
+    modelPill.hidden = false;
+  }
+
+  // reason is "" for normal, or the text after "Last request failed: " for the stopped look.
+  function setModelDot(reason) {
+    modelPill.classList.toggle("stopped", reason !== "");
+    modelPill.title = reason ? "Last request failed: " + reason : "Model: " + modelName;
+  }
+
+  // Only answers to /api/ask move the dot: quota and unavailable stop it, a success restores it.
+  function noteModelOutcome(d) {
+    var kind = d && d.error_kind;
+    if (kind === "quota") setModelDot("quota used");
+    else if (kind === "unavailable") setModelDot("model busy");
+    else if (!kind) setModelDot("");
+  }
+
   function showLimits() {
     fetch("/api/limits").then(function (res) {
       if (res.status !== 200) throw new Error("status");
       return res.json();
     }).then(function (lim) {
       var parts = [];
+      showModelName(lim.model);
       if (typeof lim.memory_turns === "number" && lim.memory_turns >= 1 && lim.memory_turns <= 20) windowSize = Math.floor(lim.memory_turns);
       setMemoryTexts();
       refreshMemory();

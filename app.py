@@ -14,7 +14,7 @@ from about import ABOUT_TEXT
 import history
 import pipeline
 import sandbox
-from model import generate_sql
+from model import MODEL_NAME, generate_sql
 from schema import schema_data
 from ratelimit import RateLimiter, client_key
 
@@ -243,6 +243,7 @@ def api_limits():
         "slots": pipeline.GATE_SLOTS,
         "memory_turns": history.MAX_TURNS,
         "rate_limit_per_minute": RATE_LIMIT_REQUESTS,
+        "model": MODEL_NAME,
     }
 
 

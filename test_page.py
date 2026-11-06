@@ -106,6 +106,7 @@ def test_page_is_ascii_only():
 SCRIPT_IDS = [
     "q", "askform", "thread", "report", "go", "groups", "count", "empty",
     "examples", "rstate", "limits", "newsess", "memoryhint",
+    "modelpill",
 ]
 
 
@@ -577,3 +578,78 @@ def test_the_diagram_check_runs_before_any_request_in_the_ask_path():
 def test_the_chip_still_calls_the_map_with_no_arguments():
     assert 'pick: function () { showMap(); }' in SOURCE
     assert 'typeof label === "string" ? label : "Database map"' in SOURCE
+
+
+def test_the_model_pill_markup_and_classes_exist():
+    assert 'id="modelpill"' in SOURCE and SOURCE.count('class="model-pill"') == 1
+    assert 'class="mdot" aria-hidden="true"' in SOURCE
+    pill = SOURCE[SOURCE.index('id="modelpill"'):]
+    assert pill[: pill.index("</div>")].count("hidden") >= 1
+    assert SOURCE.index('<h1>') < SOURCE.index('id="modelpill"') < SOURCE.index('class="tools"') < SOURCE.index('class="sub"')
+    for rule in (".model-pill {", ".model-pill .mdot {", ".model-pill.stopped .mdot {", ".model-pill .mname {"):
+        assert rule in SOURCE
+    assert "text-overflow: ellipsis" in SOURCE[SOURCE.index(".model-pill .mname"):][:200]
+    assert "var(--font-mono)" in SOURCE[SOURCE.index(".model-pill {"):][:400]
+
+
+def test_the_dot_states_are_classes_and_the_name_comes_from_the_limits_object():
+    logic = SOURCE[SOURCE.index("var modelPill"):SOURCE.index("function showLimits")]
+    assert 'classList.toggle("stopped"' in logic
+    assert ".style" not in logic and "setAttribute(\"style\"" not in logic
+    assert "showModelName(lim.model)" in SOURCE
+    assert "textContent = modelName" in logic
+    assert "Last request failed: " in logic and '"quota used"' in logic and '"model busy"' in logic
+    assert 'request.url === "/api/ask"' in SOURCE
+    assert SOURCE.count("noteModelOutcome(") == 2
+
+
+def test_no_model_name_is_hard_coded_in_the_page():
+    assert "gemini" not in SOURCE.lower()
+
+
+def _luminance(hex_color):
+    channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    channels = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _ratio(a, b):
+    high, low = sorted([_luminance(a), _luminance(b)], reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _tokens(block_start, block_end=None):
+    import re
+
+    start = SOURCE.index(block_start)
+    end = SOURCE.index(block_end, start) if block_end else start + 1500
+    return dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-fA-F]{6})", SOURCE[start:end]))
+
+
+@pytest.mark.parametrize(
+    "start,end",
+    [(":root {", "@media"), ("@media (prefers-color-scheme: dark)", "}\n}"), (':root[data-theme="dark"]', "color-scheme: dark;")],
+)
+def test_pill_contrast_meets_the_targets_in_light_dark_and_system_dark(start, end):
+    tokens = _tokens(start, end)
+    if "dot-ok" not in tokens:
+        tokens = {**_tokens(":root {", "@media"), **tokens}
+    assert _ratio(tokens["ink"], tokens["surface"]) >= 4.5
+    assert _ratio(tokens["dot-ok"], tokens["surface"]) >= 3.0
+    assert _ratio(tokens["strong"], tokens["surface"]) >= 3.0
+
+
+def test_the_heading_is_only_the_title_and_the_pill_is_outside_it():
+    start = SOURCE.index("<h1>")
+    end = SOURCE.index("</h1>")
+    assert SOURCE[start:end + 5] == "<h1>ask-northwind</h1>"
+    assert SOURCE.index('id="modelpill"') > end
+    assert "<title>" in SOURCE and "ask-northwind" in SOURCE[SOURCE.index("<title>"):SOURCE.index("</title>")]
+
+
+def test_the_subtitle_text_is_unchanged_and_has_no_width_limit():
+    text = "Ask the Northwind sample database a question in plain English. The page shows the answer and the SQL that ran."
+    assert f'<p class="sub">{text}</p>' in SOURCE
+    rule = SOURCE[SOURCE.index(".sub {"):].split("}", 1)[0]
+    assert "max-width" not in rule and "ch;" not in rule
+    assert "text-overflow" not in rule and "overflow" not in rule

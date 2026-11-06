@@ -268,3 +268,24 @@ def test_the_typed_diagram_entry_is_not_passed_to_the_memory_code():
     assert "send(" not in diagram_branch and "fitTurns" not in diagram_branch and "turns" not in diagram_branch
     maker = source[source.index("function makeTurn"):source.index("function fitTurns")]
     assert "wantsDiagram" not in maker and "showMap" not in maker
+
+
+def test_the_model_pill_logic_is_not_part_of_the_memory_code():
+    from pathlib import Path
+
+    source = (Path(__file__).parent / "index.html").read_text()
+    logic = source[source.index("var modelPill"):source.index("function showLimits")]
+    for name in ("turns", "makeTurn", "localStorage", "windowSize", "exchange"):
+        assert name not in logic
+    maker = source[source.index("function makeTurn"):source.index("function fitTurns")]
+    assert "modelName" not in maker and "modelPill" not in maker
+
+
+def test_moving_the_pill_did_not_touch_its_logic_or_ids():
+    from pathlib import Path
+
+    source = (Path(__file__).parent / "index.html").read_text()
+    assert source.count('id="modelpill"') == 1
+    assert source.count("function showModelName") == 1 and source.count("function setModelDot") == 1
+    header = source[source.index('<header class="top">'):source.index("</header>")]
+    assert header.index("<h1>") < header.index('id="modelpill"') < header.index('class="tools"') < header.index('class="sub"')

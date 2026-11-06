@@ -1,0 +1,12 @@
+# Upload filter for Cloud Build. northwind.db is deliberately NOT listed here:
+# the image needs it, even though git ignores it.
+.git
+.gitignore
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.env.*
+*.log
